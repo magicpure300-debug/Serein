@@ -1,4 +1,5 @@
-//! Fixed 40ms startup with a bounded reorder window for 2.5?120ms Opus packets.
+//! Fixed 80ms startup with a bounded reorder window for 2.5?120ms Opus packets.
+pub(crate) const STARTUP: u8 = 4;
 const SLOTS: usize = 8;
 #[derive(Default)]
 pub(crate) struct Jitter {
@@ -17,7 +18,7 @@ impl Jitter {
 		}
 		if self.next.is_none() {
 			self.next = Some(sequence);
-			self.wait = 2;
+			self.wait = STARTUP;
 		}
 		let distance = sequence.wrapping_sub(self.next.unwrap());
 		if distance >= 32768 {
@@ -26,7 +27,7 @@ impl Jitter {
 		if distance >= SLOTS as u16 {
 			self.packets.clear();
 			self.next = Some(sequence);
-			self.wait = 2;
+			self.wait = STARTUP;
 			self.missing = 0;
 		}
 		if self.packets.len() < SLOTS && !self.packets.iter().any(|(id, _)| *id == sequence) {
@@ -36,7 +37,7 @@ impl Jitter {
 	/// An empty packet requests Opus packet-loss concealment, at most three consecutive packets.
 	pub fn pop(&mut self) -> Option<Vec<u8>> {
 		if self.wait > 0 {
-			// Short packets can fill the fixed window before 40ms. Start before
+			// Short packets can fill the fixed window before 80ms. Start before
 			// the next arrival would repeatedly reset a full window.
 			if self.packets.len() < SLOTS {
 				self.wait -= 1;
@@ -80,8 +81,9 @@ mod tests {
 			for offset in [7, 5, 6] {
 				jitter.push(first.wrapping_add(offset), vec![offset as u8]);
 			}
-			assert!(jitter.pop().is_none());
-			assert!(jitter.pop().is_none());
+			for _ in 0..STARTUP {
+				assert!(jitter.pop().is_none());
+			}
 			assert_eq!(jitter.pop(), Some(vec![0]));
 			for _ in 0..3 {
 				assert_eq!(jitter.pop(), Some(vec![]));
@@ -94,8 +96,9 @@ mod tests {
 			}
 			jitter.push(first.wrapping_add(100), vec![100]);
 			assert_eq!(jitter.missing, 0);
-			assert!(jitter.pop().is_none());
-			assert!(jitter.pop().is_none());
+			for _ in 0..STARTUP {
+				assert!(jitter.pop().is_none());
+			}
 			assert_eq!(jitter.pop(), Some(vec![100]));
 		}
 	}
@@ -106,8 +109,9 @@ mod tests {
 		jitter.push(1, vec![3]);
 		jitter.push(0, vec![2]);
 		jitter.push(0, vec![9]);
-		assert!(jitter.pop().is_none());
-		assert!(jitter.pop().is_none());
+		for _ in 0..STARTUP {
+			assert!(jitter.pop().is_none());
+		}
 		assert_eq!(jitter.pop(), Some(vec![1]));
 		assert_eq!(jitter.pop(), Some(vec![2]));
 		assert_eq!(jitter.pop(), Some(vec![3]));

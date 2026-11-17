@@ -179,7 +179,7 @@ mod tests {
 			single.push(ssrc, 7, packet);
 		}
 		assert!(together.announce(3, 11).is_err());
-		for _ in 0..2 {
+		for _ in 0..crate::jitter::STARTUP {
 			assert!(together.pop().0.is_none());
 			assert!(alice.pop().0.is_none());
 			assert!(bob.pop().0.is_none());
@@ -252,7 +252,7 @@ mod tests {
 			let mut expected = std::collections::VecDeque::new();
 			let mut sequence = 0;
 			let mut played = 0;
-			for tick in 0..18 {
+			for tick in 0..22 {
 				// Packets arrive at their actual duration, before the shared 20ms playout tick.
 				let packets = if samples <= 960 {
 					960 / samples
@@ -333,8 +333,9 @@ mod tests {
 					mixer.push(11, sequence, packet.to_vec());
 				}
 			}
-			assert!(mixer.pop().0.is_none());
-			assert!(mixer.pop().0.is_none());
+			for _ in 0..crate::jitter::STARTUP {
+				assert!(mixer.pop().0.is_none());
+			}
 			for expected in expected.as_chunks::<960>().0 {
 				let frame = mixer.pop().0.expect("one 20ms frame per playout tick");
 				for (actual, expected) in frame.iter().zip(expected) {

@@ -14,6 +14,10 @@ use std::sync::{
 };
 use std::time::{Duration, Instant};
 
+/// Frames of 20 ms held between the mixer and the device callback. Capacity only;
+/// playout still starts as soon as the first frame arrives.
+const PLAYBACK_FRAMES: usize = 16;
+
 #[derive(Clone, Default, PartialEq, Eq)]
 pub struct Devices {
 	pub input: Option<String>,
@@ -383,6 +387,17 @@ impl Audio {
 						emit(Ok(()));
 					}
 					drop(latest_processing);
+					// Feed playback before the capture pipeline: echo cancellation and
+					// suppression can overrun one 20 ms tick, and delaying the speaker
+					// queue produces audible gaps even though the microphone is fine.
+					for _ in 0..8 {
+						let Ok(frame) = playback.try_recv() else {
+							break;
+						};
+						if worker_gate.playback() {
+							drops += u64::from(active.output.push(frame).is_err());
+						}
+					}
 					let noise = processing.suppression != NoiseSuppression::Off;
 					for _ in 0..8 {
 						let Ok(frame) = active.reference.pop() else {
@@ -435,14 +450,6 @@ impl Audio {
 									drops += u64::from(capture.try_send(frame).is_err());
 								}
 							}
-						}
-					}
-					for _ in 0..8 {
-						let Ok(frame) = playback.try_recv() else {
-							break;
-						};
-						if worker_gate.playback() {
-							drops += u64::from(active.output.push(frame).is_err());
 						}
 					}
 					if worker_gate.diagnostics {
@@ -676,7 +683,7 @@ impl Streams {
 			}
 			config
 		};
-		let (output_write, output_read) = rtrb::RingBuffer::new(8);
+		let (output_write, output_read) = rtrb::RingBuffer::new(PLAYBACK_FRAMES);
 		let (reference_write, reference_read) = rtrb::RingBuffer::new(8);
 		let render = Playback::new(output_config.sample_rate(), output_read, reference_write);
 		let (input_stream, input_read, input_id) = if gate.input_enabled.load(Ordering::Acquire) {
@@ -1099,7 +1106,7 @@ impl Playback {
 		}
 	}
 	fn reset(&mut self) {
-		for _ in 0..8 {
+		for _ in 0..PLAYBACK_FRAMES {
 			if self.input.pop().is_err() {
 				break;
 			}

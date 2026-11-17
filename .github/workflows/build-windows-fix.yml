@@ -1,0 +1,26 @@
+name: build-windows-fix
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: windows-latest
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v7.0.1
+      - uses: dtolnay/rust-toolchain@1.99.1
+      - uses: Swatinem/rust-cache@v2.9.2
+        with:
+          cache-on-failure: true
+      - name: Voice unit tests
+        run: cargo test --locked -p discord-voice --lib
+      - name: Release client
+        run: cargo build --locked --release -p serein --bin serein --no-default-features
+      - uses: actions/upload-artifact@v7.0.1
+        with:
+          name: serein-windows-fix
+          path: target/release/serein.exe

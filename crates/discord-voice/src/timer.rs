@@ -62,6 +62,16 @@ impl Resolution {
 		#[allow(unsafe_code)]
 		// SAFETY: A process-scoped request, balanced by timeEndPeriod in Drop on success.
 		let raised = unsafe { windows::Win32::Media::timeBeginPeriod(1) } == 0;
+		#[cfg(target_os = "windows")]
+		#[allow(unsafe_code)]
+		// SAFETY: GetCurrentThread returns a pseudo-handle for this media thread; the
+		// priority constant is valid. A failure only keeps the inherited priority.
+		let _ = unsafe {
+			use windows::Win32::System::Threading::{
+				GetCurrentThread, SetThreadPriority, THREAD_PRIORITY_HIGHEST,
+			};
+			SetThreadPriority(GetCurrentThread(), THREAD_PRIORITY_HIGHEST)
+		};
 		Self {
 			#[cfg(target_os = "windows")]
 			raised,
